@@ -1,7 +1,12 @@
+//Author:   hzgmaxwell@hotmail.com
+//verison:
+//0.01      May-13-2008, Created
+//0.02      May-16-2008, Multi-Inheritance supported
 #include <string>
 #include <map>
 #include <fstream>
 #include <iostream>
+//#include <unistd.h>
 using namespace std;
 
 class TreeNode
@@ -11,32 +16,33 @@ public:
     TreeNode* parent;
     TreeNode* left;
     TreeNode* right;
-    TreeNode(const string& nm) : name(nm), left(NULL), right(NULL){}
+    bool adopted;
+    TreeNode(const string& nm) : name(nm), left(NULL), right(NULL), adopted(false){}
 };
 
-TreeNode* buildTree(const char* fileName)
+TreeNode* buildTree(const char* fileName, map<string, TreeNode*>& cl)
 {
     TreeNode* root = new TreeNode("root");
-    map<string, TreeNode*> classLib;
     ifstream ifs(fileName);
     TreeNode* pLast = root;
+    //sleep(1);
+    char buf[1024] = {0};
     while (ifs.good())
     {
-        char buf[1024] = {0};
         if(ifs.getline(buf, sizeof(buf)))
         {
-            char * p = buf;
-            while(*++p != ',');
-            *p = '\0';
-            ++p;
+            char * childName = buf;
+            while(*++childName != ',');
+            *childName = '\0';
+            ++childName;
             TreeNode* pParent = NULL;
             TreeNode* pChild = NULL;
-            if(classLib.count(buf))
-                pParent = classLib[buf];
+            if(cl.count(buf))
+                pParent = cl[buf];
             else
             {
                 pParent = new TreeNode(buf);
-                classLib[buf] = pParent;
+                cl[buf] = pParent;
                 //whenever a new parent was created, add it as the far right descendant of root
                 if(pLast == root)
                     pLast->left = pParent;
@@ -45,25 +51,38 @@ TreeNode* buildTree(const char* fileName)
                 pParent->parent = pLast;
                 pLast = pParent;
             }
-            if(classLib.count(p))
+            if(cl.count(childName))
             {
-                pChild = classLib[p];
-                //since I'm going to have the right parent, so remove me from the original position
-                TreeNode* p = pChild->parent;
-                if(p->right == pChild)
-                    p->right = pChild->right;
-                else
-                    p->left = pChild->right;
-                if(pChild->right)
+                pChild = cl[childName];
+                if(!(pChild->adopted))
                 {
-                    pChild->right->parent = p;
-                    pChild->right = NULL;
+                    //since I'm going to have the right parent, so remove me from the original position
+                    TreeNode* pTmpParent = pChild->parent;
+                    if(pTmpParent->right == pChild)
+                        pTmpParent->right = pChild->right;
+                    else
+                        pTmpParent->left = pChild->right;
+                    if(pChild->right)
+                    {
+                        pChild->right->parent = pTmpParent;
+                        pChild->right = NULL;
+                    }
+                    else
+                    {
+                        //if I was the far right descendant of root, then set pLast to my previous parent.
+                        pLast = pChild->parent;
+                    }
+                }
+                else
+                {
+                    //what's the matter, I have another parent, yes, it's multi-inheritance.
+                    pChild = new TreeNode(string(childName)+"*");
                 }
             }
             else
             {
-                pChild = new TreeNode(p);
-                classLib[p] = pChild;
+                pChild = new TreeNode(childName);
+                cl[childName] = pChild;
             }
 
             if(pParent->left == NULL)
@@ -74,11 +93,12 @@ TreeNode* buildTree(const char* fileName)
             }
             else
             {
-                TreeNode* p = pParent->left;
-                while(p && p->right) p = p->right;
-                p->right = pChild;
-                pChild->parent = p;
+                TreeNode* pTmp = pParent->left;
+                while(pTmp && pTmp->right) pTmp = pTmp->right;
+                pTmp->right = pChild;
+                pChild->parent = pTmp;
             }
+            pChild->adopted = true;
         }
     } 
     return root;
@@ -94,6 +114,33 @@ void print(TreeNode* tree,int level)
     cout << tree->name <<endl;
     print(tree->left,level+1);
     print(tree->right,level);
+}
+void verify(const char* fileName, const map<string, TreeNode*>& cl)
+{
+    ifstream ifs(fileName);
+    char buf[1024] = {0};
+    while (ifs.good())
+    {
+        if(ifs.getline(buf, sizeof(buf)))
+        {
+            char * childName = buf;
+            while(*++childName != ',');
+            *childName = '\0';
+            ++childName;
+            TreeNode* pParent = cl.find(buf)->second;
+            TreeNode* pChild = cl.find(childName)->second;
+            if(pParent->left->name.find(pChild->name) == 0)
+                continue;
+            else
+            {
+                pParent = pParent->left;
+                while(pParent->right && pParent->right->name.find(pChild->name) != 0)
+                    pParent = pParent->right;
+                if(pParent->right == NULL)
+                    printf("error: %s->%s\n",buf,childName);
+            }
+        }
+    }
 }
 static char* helpMsg = "Usage:\n"
     "\t\tclasstree <in_file>\n"
@@ -117,7 +164,21 @@ int main(int argc,char **argv)
         printf(helpMsg);
         exit(0);
     }
-    TreeNode* pTree = buildTree(argv[1]);
+
+    map<string, TreeNode*> classLb;
+    TreeNode* pTree = buildTree(argv[1],classLb);
     print(pTree,0);
+    verify(argv[1], classLb);
+    /*char buf[512] = {0};
+    while(buf[0] != ']')
+    {
+        scanf("%s",buf);
+        pTree = classLb[buf];
+        printf("\n%s->%s\n",pTree->parent->name.c_str(),pTree->name.c_str());
+        if(pTree->left)
+            printf("->(%s\n",pTree->left->name.c_str());
+        if(pTree->right)
+            printf(",%s,...\n",pTree->right->name.c_str());
+    }*/
     return 0;
 }
